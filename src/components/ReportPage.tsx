@@ -111,7 +111,8 @@ function ReportPage({
             <div style={styles.templateGrid}>
               {REPORT_TEMPLATES.map((t) => (
                 <div
-                  key={t.id === templateId ? styles.templateActive : styles.template}
+                  key={t.id}
+                  style={t.id === templateId ? styles.templateActive : styles.template}
                   onClick={() => onTemplateChange(t.id)}
                 >
                   <div style={styles.templateHeader}>

@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import type {
   TransportOrder,
   TemperatureRecord,
@@ -48,14 +48,36 @@ function App() {
     '本次运输全程温度控制良好，除必要的装卸货作业外，车厢温度稳定在标准范围内，货物质量安全，符合客户温区要求。'
   );
   const [templateId, setTemplateId] = useState<string>('standard');
+  const prevIntervalsRef = useRef<OverTempInterval[]>([]);
 
-  const runAnalysis = useCallback(
-    (recs: TemperatureRecord[], std: TempZoneStandard | null) => {
-      const result = analyzeTemperature(recs, std);
-      setOverTempIntervals(result.overTempIntervals);
-    },
-    []
-  );
+  const mergeReasonsFromPrevious = (
+    newIntervals: OverTempInterval[],
+    oldIntervals: OverTempInterval[]
+  ): OverTempInterval[] => {
+    if (oldIntervals.length === 0) return newIntervals;
+    const buildKey = (it: OverTempInterval) =>
+      `${it.type}|${it.startTime}|${it.endTime}`;
+    const oldMap = new Map(oldIntervals.map((o) => [buildKey(o), o]));
+    return newIntervals.map((ni) => {
+      const key = buildKey(ni);
+      const matched = oldMap.get(key);
+      if (matched && matched.reason.trim()) {
+        return { ...ni, reason: matched.reason };
+      }
+      return ni;
+    });
+  };
+
+  useEffect(() => {
+    if (records.length === 0) return;
+    const result = analyzeTemperature(records, standard);
+    const merged = mergeReasonsFromPrevious(
+      result.overTempIntervals,
+      prevIntervalsRef.current
+    );
+    setOverTempIntervals(merged);
+    prevIntervalsRef.current = merged;
+  }, [records, standard]);
 
   const handleFileUpload = useCallback(
     (file: File) => {
@@ -82,21 +104,18 @@ function App() {
           const parsed = parseTemperatureRecords(content, file.name);
           if (parsed.length > 0) {
             setRecords(parsed);
-            const newNodes = generateNodes(parsed);
-            setNodes(newNodes);
-            runAnalysis(parsed, standard);
+            setNodes(generateNodes(parsed));
           }
         } else if (type === 'standard') {
           const parsed = parseTempZoneStandard(content, file.name);
           if (parsed) {
             setStandard(parsed);
-            runAnalysis(records, parsed);
           }
         }
       };
       reader.readAsText(file);
     },
-    [records, standard, runAnalysis]
+    []
   );
 
   const loadSampleData = useCallback(() => {
@@ -105,8 +124,12 @@ function App() {
     setRecords(recs);
     setStandard(sampleStandard);
     setNodes(generateNodes(recs));
-    runAnalysis(recs, sampleStandard);
-  }, [runAnalysis]);
+  }, []);
+
+  const handleIntervalsChange = useCallback((next: OverTempInterval[]) => {
+    setOverTempIntervals(next);
+    prevIntervalsRef.current = next;
+  }, []);
 
   const hasData = records.length > 0;
 
@@ -205,7 +228,7 @@ function App() {
                 records={records}
                 standard={standard}
                 overTempIntervals={overTempIntervals}
-                onIntervalsChange={setOverTempIntervals}
+                onIntervalsChange={handleIntervalsChange}
               />
             )}
             {activeTab === 'report' && (
